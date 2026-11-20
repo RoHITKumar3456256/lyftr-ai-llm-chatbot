@@ -11,6 +11,7 @@ function generateSessionId() {
 export default function App() {
   const [sessionId] = useState(() => generateSessionId());
   const [systemPrompt, setSystemPrompt] = useState("");
+  const [simulateFailure, setSimulateFailure] = useState("");
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -37,9 +38,14 @@ export default function App() {
         payload.system_prompt = systemPrompt.trim();
       }
 
+      const headers = { "Content-Type": "application/json" };
+      if (simulateFailure.trim()) {
+        headers["X-Simulate-Failure"] = simulateFailure.trim();
+      }
+
       const res = await fetch(`${API_BASE_URL}/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify(payload),
       });
 
@@ -80,16 +86,28 @@ export default function App() {
           <h1>KeyFlow AI Gateway</h1>
           <div className="session-badge">Session: {sessionId}</div>
         </div>
-        <div className="system-prompt-box">
-          <label htmlFor="sys-prompt">System Prompt:</label>
-          <input
-            id="sys-prompt"
-            data-testid="system-prompt-input"
-            type="text"
-            placeholder="Optional system prompt..."
-            value={systemPrompt}
-            onChange={(e) => setSystemPrompt(e.target.value)}
-          />
+        <div className="header-controls">
+          <div className="system-prompt-box">
+            <label htmlFor="sys-prompt">System Prompt:</label>
+            <input
+              id="sys-prompt"
+              data-testid="system-prompt-input"
+              type="text"
+              placeholder="Optional system prompt..."
+              value={systemPrompt}
+              onChange={(e) => setSystemPrompt(e.target.value)}
+            />
+          </div>
+          <div className="simulate-box">
+            <label htmlFor="sim-failure">Simulate Fail:</label>
+            <input
+              id="sim-failure"
+              type="text"
+              placeholder="e.g. key_1=429"
+              value={simulateFailure}
+              onChange={(e) => setSimulateFailure(e.target.value)}
+            />
+          </div>
         </div>
       </header>
 
@@ -199,4 +217,3 @@ export default function App() {
     </div>
   );
 }
-

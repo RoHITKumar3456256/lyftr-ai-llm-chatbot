@@ -37,25 +37,40 @@ body {
   font-family: monospace;
   margin-top: 2px;
 }
-.system-prompt-box {
+.header-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.system-prompt-box,
+.simulate-box {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
-.system-prompt-box label {
+.system-prompt-box label,
+.simulate-box label {
   font-size: 0.8rem;
   color: #cbd5e1;
 }
-.system-prompt-box input {
+.system-prompt-box input,
+.simulate-box input {
   background: #1e293b;
   border: 1px solid #334155;
   color: #f8fafc;
   padding: 6px 10px;
   border-radius: 6px;
-  width: 240px;
   font-size: 0.85rem;
 }
-.system-prompt-box input:focus {
+.system-prompt-box input {
+  width: 200px;
+}
+.simulate-box input {
+  width: 140px;
+}
+.system-prompt-box input:focus,
+.simulate-box input:focus {
   outline: none;
   border-color: #38bdf8;
 }
@@ -194,4 +209,3 @@ body {
   opacity: 0.5;
   cursor: not-allowed;
 }
-
