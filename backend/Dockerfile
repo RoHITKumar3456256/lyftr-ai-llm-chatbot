@@ -10,5 +10,5 @@ COPY --from=builder /install /usr/local
 COPY app ./app
 RUN mkdir -p /data && chmod 777 /data
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-
+# Dynamically bind to Render's $PORT or default to 8000 for local Docker compose
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
