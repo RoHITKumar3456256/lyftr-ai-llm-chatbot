@@ -67,7 +67,7 @@ def generate_chat_completion(
     simulate_header: Optional[str] = None,
 ) -> Dict[str, Any]:
     start_time = time.perf_counter()
-    model = os.getenv("LLM_MODEL", "gemini/gemini-2.0-flash")
+    model = os.getenv("LLM_MODEL", "gemini/gemini-2.5-flash")
     key_pool = get_key_pool()
 
     digest = _cache_digest(model, messages)
