@@ -39,10 +39,14 @@ init_db()
 
 allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "*")
 allowed_origins = [o.strip() for o in allowed_origins_raw.split(",") if o.strip()]
+
+# When using wildcard origins, allow_credentials must be False
+# (browsers reject responses with allow_credentials=True + Origin: *)
+_use_wildcard = not allowed_origins or allowed_origins == ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins if allowed_origins else ["*"],
-    allow_credentials=True,
+    allow_origins=["*"] if _use_wildcard else allowed_origins,
+    allow_credentials=False if _use_wildcard else True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
