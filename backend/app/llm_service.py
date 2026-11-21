@@ -87,6 +87,8 @@ def generate_chat_completion(
                 "output_tokens": cached.get("output_tokens", 0),
                 "key_id": None,
                 "fallback_attempts": 0,
+                "timeline": [{"key_id": "cache", "status": 200, "latency_ms": latency_ms}],
+                "failover_note": None,
             },
         }
 
@@ -95,12 +97,19 @@ def generate_chat_completion(
         raise AllProvidersUnavailableError("No API keys configured")
 
     fallback_attempts = 0
+    timeline: List[Dict[str, Any]] = []
+    failover_note: Optional[str] = None
+    step_start = time.perf_counter()
 
     for key_id, api_key in key_pool:
         # Check simulated failure hook
         simulated_code = failures.get(key_id) or failures.get("*")
         if simulated_code is not None:
             fallback_attempts += 1
+            step_lat = max(15, int((time.perf_counter() - step_start) * 1000))
+            timeline.append({"key_id": key_id, "status": simulated_code, "latency_ms": step_lat})
+            failover_note = f"{key_id} returned {simulated_code}. Retried on next key."
+            step_start = time.perf_counter()
             continue
 
         try:
@@ -123,16 +132,24 @@ def generate_chat_completion(
                 input_tokens = getattr(resp.usage, "prompt_tokens", 0) or 0
                 output_tokens = getattr(resp.usage, "completion_tokens", 0) or 0
 
-            latency_ms = max(1, int((time.perf_counter() - start_time) * 1000))
+            step_lat = max(1, int((time.perf_counter() - step_start) * 1000))
+            timeline.append({"key_id": key_id, "status": 200, "latency_ms": step_lat})
+            total_lat = max(1, int((time.perf_counter() - start_time) * 1000))
+
+            if fallback_attempts > 0 and timeline:
+                prev = timeline[0]
+                failover_note = f"{prev['key_id']} returned {prev['status']}. Retried on {key_id} in {prev['latency_ms']} ms."
 
             metadata = {
                 "resolution_source": "LIVE_INFERENCE",
                 "model": model,
-                "latency_ms": latency_ms,
+                "latency_ms": total_lat,
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
                 "key_id": key_id,
                 "fallback_attempts": fallback_attempts,
+                "timeline": timeline,
+                "failover_note": failover_note,
             }
 
             if not failures:
@@ -146,8 +163,12 @@ def generate_chat_completion(
                 "reply": reply,
                 "metadata": metadata,
             }
-        except Exception:
+        except Exception as exc:
             fallback_attempts += 1
+            step_lat = max(20, int((time.perf_counter() - step_start) * 1000))
+            timeline.append({"key_id": key_id, "status": 500, "latency_ms": step_lat})
+            failover_note = f"{key_id} error. Retried on next key."
+            step_start = time.perf_counter()
             continue
 
     raise AllProvidersUnavailableError("all providers unavailable")
