@@ -15,21 +15,20 @@ export default function App() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
   const bottomRef = useRef(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, errorMsg, loading]);
+  }, [messages, loading]);
 
   const handleSend = async (e) => {
     if (e) e.preventDefault();
     const trimmed = input.trim();
     if (!trimmed || loading) return;
 
-    setErrorMsg("");
     setInput("");
     setLoading(true);
+    // Persist user turn in active chat stream without clearing on subsequent error
     setMessages((prev) => [...prev, { role: "user", content: trimmed }]);
 
     try {
@@ -55,8 +54,12 @@ export default function App() {
           typeof data.detail === "string"
             ? data.detail
             : JSON.stringify(data.detail || "Error");
-        setErrorMsg(`Error (${res.status}): ${detail}`);
-        setMessages((prev) => prev.slice(0, -1));
+        const errMsg = `Error (${res.status}): ${detail}`;
+        // Render inline readable error message in the chat stream without blanking or clearing messages
+        setMessages((prev) => [
+          ...prev,
+          { role: "error", content: errMsg },
+        ]);
         return;
       }
 
@@ -65,8 +68,10 @@ export default function App() {
         { role: "assistant", content: data.reply, metadata: data.metadata },
       ]);
     } catch (err) {
-      setErrorMsg(`Network error: ${err.message}`);
-      setMessages((prev) => prev.slice(0, -1));
+      setMessages((prev) => [
+        ...prev,
+        { role: "error", content: `Network error: ${err.message}` },
+      ]);
     } finally {
       setLoading(false);
     }
@@ -131,6 +136,16 @@ export default function App() {
             );
           }
 
+          if (m.role === "error") {
+            return (
+              <div key={idx} className="message-row error-row">
+                <div className="error-banner">
+                  <strong>Notice:</strong> {m.content}
+                </div>
+              </div>
+            );
+          }
+
           return (
             <div key={idx} className="message-row assistant-row">
               <div
@@ -187,12 +202,6 @@ export default function App() {
 
         {loading && (
           <div className="loading-indicator">Generating response...</div>
-        )}
-
-        {errorMsg && (
-          <div className="error-banner">
-            <strong>Error:</strong> {errorMsg}
-          </div>
         )}
         <div ref={bottomRef} />
       </main>
