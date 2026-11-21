@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 
 const API_BASE_URL = (
-  import.meta.env.VITE_API_URL || "http://localhost:8000"
+  import.meta.env.VITE_API_URL || "https://lyftr-ai-llm-chatbot.onrender.com"
 ).replace(/\/$/, "");
 
 function generateSessionId() {
-  return `s-${Math.random().toString(36).substring(2, 9)}`;
+  return `s-${Math.random().toString(36).substring(2, 8)}`;
 }
 
 function formatTime(isoStr) {
@@ -21,14 +21,16 @@ function CopyButton({ text }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async (e) => {
     e.stopPropagation();
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
   };
   return (
-    <button className="copy-btn" onClick={handleCopy} title="Copy response">
+    <button className="glass-icon-btn" onClick={handleCopy} title="Copy response">
       {copied ? (
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="20 6 9 17 4 12" />
         </svg>
       ) : (
@@ -41,40 +43,40 @@ function CopyButton({ text }) {
   );
 }
 
-function TypingIndicator() {
-  return (
-    <div className="typing-indicator">
-      <div className="ai-avatar small">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
-          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-        </svg>
-      </div>
-      <div className="typing-dots">
-        <span /><span /><span />
-      </div>
-    </div>
-  );
-}
-
-function Toast({ toasts }) {
-  return (
-    <div className="toast-container">
-      {toasts.map((t) => (
-        <div key={t.id} className={`toast toast-${t.type}`}>
-          <span>{t.msg}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
+const QUICK_PROMPTS = [
+  {
+    icon: "⚡",
+    title: "Test Deterministic Cache",
+    prompt: "What is the capital of India?",
+    desc: "Send once for live inference, then send again for instant LLM_CACHE hit."
+  },
+  {
+    icon: "🛡️",
+    title: "Simulate Key 1 Rate Limit",
+    prompt: "Calculate 25 * 40 and explain the steps.",
+    desc: "Uses key_1=429 simulation to trigger seamless fallback to key_2.",
+    simulation: "key_1=429"
+  },
+  {
+    icon: "🧠",
+    title: "Multi-Turn Memory Test",
+    prompt: "Remember my favorite framework is FastAPI. What was it?",
+    desc: "Tests session memory persistence in SQLite."
+  },
+  {
+    icon: "✨",
+    title: "Creative Assistant",
+    prompt: "Write a 3-line poem about high availability and AI gateways.",
+    desc: "Tests LLM response streaming and latency metrics."
+  }
+];
 
 export default function App() {
   const [sessions, setSessions] = useState(() => {
     const id = generateSessionId();
     return [{ id, label: "Session 1", createdAt: new Date().toISOString() }];
   });
-  const [activeSessionId, setActiveSessionId] = useState(() => null);
+  const [activeSessionId, setActiveSessionId] = useState(null);
   const [messagesBySession, setMessagesBySession] = useState({});
   const [systemPrompt, setSystemPrompt] = useState("");
   const [showSystemPrompt, setShowSystemPrompt] = useState(false);
@@ -86,43 +88,37 @@ export default function App() {
   const [activeMessageIndex, setActiveMessageIndex] = useState(null);
   const [showDetails, setShowDetails] = useState(true);
   const [currentModel, setCurrentModel] = useState("gemini-2.5-flash");
-  const [toasts, setToasts] = useState([]);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [toast, setToast] = useState(null);
 
   const bottomRef = useRef(null);
   const chatInputRef = useRef(null);
-  const toastIdRef = useRef(0);
 
-  // Init active session
   const currentSessionId = activeSessionId || sessions[0]?.id;
   const messages = messagesBySession[currentSessionId] || [];
+
+  const showToast = useCallback((msg, type = "info") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3200);
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  const addToast = useCallback((msg, type = "info") => {
-    const id = ++toastIdRef.current;
-    setToasts((prev) => [...prev, { id, msg, type }]);
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
-  }, []);
-
   const handleNewSession = () => {
     const id = generateSessionId();
     const label = `Session ${sessions.length + 1}`;
-    setSessions((prev) => [...prev, { id, label, createdAt: new Date().toISOString() }]);
+    setSessions((prev) => [ { id, label, createdAt: new Date().toISOString() }, ...prev ]);
     setActiveSessionId(id);
     setActiveMessageIndex(null);
     setInput("");
-    setShowDetails(false);
-    addToast("New session started", "success");
+    showToast("✨ Started new session", "success");
   };
 
   const handleSelectSession = (id) => {
     setActiveSessionId(id);
     setActiveMessageIndex(null);
-    setShowDetails(false);
     setInput("");
   };
 
@@ -133,10 +129,12 @@ export default function App() {
     }));
   };
 
-  const handleSend = async (e) => {
-    if (e) e.preventDefault();
-    const trimmed = input.trim();
+  const handleSend = async (customText, customSim) => {
+    const messageToSend = typeof customText === "string" ? customText : input;
+    const trimmed = messageToSend.trim();
     if (!trimmed || loading) return;
+
+    const simToUse = typeof customSim === "string" ? customSim : simulateFailure;
 
     setInput("");
     setLoading(true);
@@ -151,8 +149,8 @@ export default function App() {
       }
 
       const headers = { "Content-Type": "application/json" };
-      if (simulateFailure.trim()) {
-        headers["X-Simulate-Failure"] = simulateFailure.trim();
+      if (simToUse && simToUse.trim()) {
+        headers["X-Simulate-Failure"] = simToUse.trim();
       }
 
       const res = await fetch(`${API_BASE_URL}/chat`, {
@@ -166,21 +164,22 @@ export default function App() {
         const detail =
           typeof data.detail === "string"
             ? data.detail
-            : JSON.stringify(data.detail || "Error");
+            : JSON.stringify(data.detail || "Service error");
         setMessages((prev) => [
           ...prev,
           { role: "error", content: `Error (${res.status}): ${detail}`, timestamp: new Date().toISOString() },
         ]);
-        addToast(`Request failed: ${res.status}`, "error");
+        showToast(`Request returned ${res.status}`, "error");
         return;
       }
 
       if (data.metadata?.resolution_source === "LLM_CACHE") {
         setCacheHits((c) => c + 1);
-        addToast("Served from cache ⚡", "cache");
+        showToast("⚡ Served instantly from deterministic cache!", "cache");
       } else if (data.metadata?.fallback_attempts > 0) {
-        addToast(`Failover used: ${data.metadata.fallback_attempts} key(s) tried`, "warn");
+        showToast(`🛡️ Failover activated: ${data.metadata.fallback_attempts} fallback attempt(s)`, "warn");
       }
+
       if (data.metadata?.model) {
         setCurrentModel(data.metadata.model.replace("gemini/", ""));
       }
@@ -203,11 +202,11 @@ export default function App() {
         ...prev,
         {
           role: "error",
-          content: `Network error: ${err.message}. Check that the backend is running and VITE_API_URL is correct.`,
+          content: `Network error: ${err.message}. Backend URL: ${API_BASE_URL}`,
           timestamp: new Date().toISOString(),
         },
       ]);
-      addToast("Network error — check backend", "error");
+      showToast("Network error: check backend status", "error");
     } finally {
       setLoading(false);
     }
@@ -220,7 +219,6 @@ export default function App() {
     }
   };
 
-  // Find assistant replies for details panel
   const assistantReplies = messages
     .map((m, idx) => ({ ...m, globalIndex: idx }))
     .filter((m) => m.role === "assistant");
@@ -240,627 +238,604 @@ export default function App() {
   const isKey2Simulated =
     simulateFailure.includes("key_2") || simulateFailure.includes("*=");
 
-  const filteredSessions = sessions.filter((s) =>
-    s.label.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const totalMessages = Object.values(messagesBySession).reduce(
-    (acc, msgs) => acc + (msgs || []).filter((m) => m.role === "assistant").length,
-    0
-  );
-
   return (
-    <div className="layout-root">
-      <Toast toasts={toasts} />
+    <div className="simy-app-root">
+      {/* Background ambient iridescent glows */}
+      <div className="bg-glow bg-glow-1" />
+      <div className="bg-glow bg-glow-2" />
+      <div className="bg-glow bg-glow-3" />
 
-      {/* LEFT SIDEBAR */}
-      <aside className={`sidebar-left ${sidebarCollapsed ? "collapsed" : ""}`}>
-        {/* Brand */}
-        <div className="sidebar-brand">
-          <div className="brand-logo">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
-              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-            </svg>
-          </div>
-          {!sidebarCollapsed && (
-            <div className="brand-text">
-              <span className="brand-title">KeyFlow</span>
-              <span className="brand-sub">AI Gateway</span>
-            </div>
-          )}
-          <button className="sidebar-toggle" onClick={() => setSidebarCollapsed((p) => !p)} title="Toggle sidebar">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              {sidebarCollapsed ? <polyline points="9 18 15 12 9 6" /> : <polyline points="15 18 9 12 15 6" />}
-            </svg>
-          </button>
+      {/* Floating Toast Notification */}
+      {toast && (
+        <div className={`floating-toast toast-${toast.type}`}>
+          <span className="toast-dot" />
+          <span>{toast.msg}</span>
         </div>
+      )}
 
-        {!sidebarCollapsed && (
-          <>
-            {/* New Session Button */}
-            <button className="btn-new-session" onClick={handleNewSession}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              New Session
+      {/* 3-COLUMN GLASS CONTAINER */}
+      <div className="simy-glass-container">
+        
+        {/* LEFT SIDEBAR: SESSIONS, KEYS & CACHE */}
+        <aside className={`glass-sidebar ${sidebarOpen ? "open" : "collapsed"}`}>
+          {/* Brand & Bot Avatar */}
+          <div className="sidebar-brand-card">
+            <div className="bot-avatar-3d">
+              <div className="bot-head">
+                <span className="bot-eye left">✦</span>
+                <span className="bot-smile">‿</span>
+                <span className="bot-eye right">✦</span>
+              </div>
+              <div className="online-indicator" />
+            </div>
+            {sidebarOpen && (
+              <div className="brand-meta">
+                <div className="brand-title-wrap">
+                  <span className="brand-title">KeyFlow</span>
+                  <span className="pro-badge">AI 2.0</span>
+                </div>
+                <span className="brand-sub">Lyftr Resilient Gateway</span>
+              </div>
+            )}
+            <button
+              className="glass-icon-btn collapse-btn"
+              onClick={() => setSidebarOpen((p) => !p)}
+              title="Toggle sidebar"
+            >
+              {sidebarOpen ? "◀" : "▶"}
             </button>
+          </div>
 
-            {/* Search */}
-            <div className="search-box">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
-              <input
-                type="text"
-                placeholder="Search sessions..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="search-input"
-              />
-            </div>
+          {sidebarOpen && (
+            <>
+              {/* Action: New Session */}
+              <button className="primary-glass-btn new-session-btn" onClick={handleNewSession}>
+                <span className="btn-icon">＋</span>
+                <span>Start New Chat</span>
+              </button>
 
-            {/* Sessions List */}
-            <div className="sidebar-section">
-              <div className="section-label">SESSIONS</div>
-              <div className="sessions-list">
-                {filteredSessions.map((s) => {
-                  const sessionMsgs = messagesBySession[s.id] || [];
-                  const msgCount = sessionMsgs.filter((m) => m.role !== "error").length;
-                  const isActive = s.id === currentSessionId;
-                  return (
-                    <button
-                      key={s.id}
-                      className={`session-item ${isActive ? "session-active" : ""}`}
-                      onClick={() => handleSelectSession(s.id)}
-                    >
-                      <div className="session-item-icon">{isActive ? "●" : "○"}</div>
-                      <div className="session-item-info">
-                        <div className="session-item-label">{s.label}</div>
-                        <div className="session-item-meta">
-                          <span className="session-id-mono">{s.id}</span>
-                          {msgCount > 0 && <span>· {msgCount} msgs</span>}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Provider Keys */}
-            <div className="sidebar-section">
-              <div className="section-label">PROVIDER KEYS</div>
-              <div className="keys-list">
-                <div className="key-item">
-                  <div className="key-left">
-                    <span className={`dot ${isKey1Simulated ? "dot-amber pulse-amber" : "dot-green pulse-green"}`} />
-                    <span className="key-name">key_1</span>
-                  </div>
-                  <span className={`key-badge ${isKey1Simulated ? "badge-limited" : "badge-healthy"}`}>
-                    {isKey1Simulated ? "Simulated" : "Active"}
-                  </span>
+              {/* Provider Keys Pool Card */}
+              <div className="glass-card section-card">
+                <div className="section-header">
+                  <span className="section-title">PROVIDER KEY POOL</span>
+                  <span className="pool-count">2 Keys</span>
                 </div>
-                <div className="key-item">
-                  <div className="key-left">
-                    <span className={`dot ${isKey2Simulated ? "dot-amber pulse-amber" : "dot-green pulse-green"}`} />
-                    <span className="key-name">key_2</span>
-                  </div>
-                  <span className={`key-badge ${isKey2Simulated ? "badge-limited" : "badge-healthy"}`}>
-                    {isKey2Simulated ? "Simulated" : "Active"}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Cache Status */}
-            <div className="sidebar-section">
-              <div className="section-label">RESPONSE CACHE</div>
-              <div className="cache-card">
-                <div className="cache-row">
-                  <div className="cache-info">
-                    <div className="cache-status-text">
-                      {cacheEnabled ? "Enabled" : "Disabled"}
+                <div className="keys-stack">
+                  <div className={`key-tile ${isKey1Simulated ? "tile-simulated" : "tile-active"}`}>
+                    <div className="key-info">
+                      <span className={`status-orb ${isKey1Simulated ? "orb-amber" : "orb-green"}`} />
+                      <span className="key-code">key_1</span>
                     </div>
-                    <div className="cache-detail">SHA-256 deterministic · {cacheHits} {cacheHits === 1 ? "hit" : "hits"}</div>
+                    <span className="key-status-tag">
+                      {isKey1Simulated ? "Simulated Fail" : "Healthy (Primary)"}
+                    </span>
                   </div>
-                  <label className="switch">
+
+                  <div className={`key-tile ${isKey2Simulated ? "tile-simulated" : "tile-active"}`}>
+                    <div className="key-info">
+                      <span className={`status-orb ${isKey2Simulated ? "orb-amber" : "orb-green"}`} />
+                      <span className="key-code">key_2</span>
+                    </div>
+                    <span className="key-status-tag">
+                      {isKey2Simulated ? "Simulated Fail" : "Healthy (Fallback)"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Response Cache Card */}
+              <div className="glass-card section-card">
+                <div className="section-header">
+                  <span className="section-title">DETERMINISTIC CACHE</span>
+                  <span className="cache-counter">{cacheHits} {cacheHits === 1 ? "hit" : "hits"}</span>
+                </div>
+                <div className="cache-toggle-row">
+                  <div>
+                    <div className="cache-mode-label">{cacheEnabled ? "Active & Serving" : "Disabled"}</div>
+                    <div className="cache-sub-label">SHA-256 prompt digest</div>
+                  </div>
+                  <label className="ios-switch">
                     <input
                       type="checkbox"
                       checked={cacheEnabled}
                       onChange={(e) => setCacheEnabled(e.target.checked)}
                     />
-                    <span className="slider" />
+                    <span className="ios-slider" />
                   </label>
                 </div>
-                {totalMessages > 0 && (
-                  <div className="cache-stats-bar">
-                    <div
-                      className="cache-stats-fill"
-                      style={{ width: `${totalMessages > 0 ? Math.min(100, (cacheHits / totalMessages) * 100) : 0}%` }}
-                    />
+              </div>
+
+              {/* Sessions History List */}
+              <div className="glass-card section-card sessions-card">
+                <div className="section-header">
+                  <span className="section-title">CONVERSATIONS</span>
+                  <span className="sessions-badge">{sessions.length}</span>
+                </div>
+                <div className="sessions-scroll">
+                  {sessions.map((s) => {
+                    const isActive = s.id === currentSessionId;
+                    const sessionMsgs = messagesBySession[s.id] || [];
+                    return (
+                      <button
+                        key={s.id}
+                        className={`session-row ${isActive ? "active-session" : ""}`}
+                        onClick={() => handleSelectSession(s.id)}
+                      >
+                        <span className="session-icon">{isActive ? "💬" : "▫️"}</span>
+                        <div className="session-text-wrap">
+                          <span className="session-name">{s.label}</span>
+                          <span className="session-id-tag">{s.id} · {sessionMsgs.length} msgs</span>
+                        </div>
+                        <span className="session-arrow">→</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Footer info */}
+              <div className="sidebar-bottom-bar">
+                <div className="model-chip-live">
+                  <span className="pulse-dot-cyan" />
+                  <span>{currentModel}</span>
+                </div>
+                <a
+                  href={`${API_BASE_URL}/docs`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="docs-link"
+                  title="Open Swagger API documentation"
+                >
+                  Swagger ↗
+                </a>
+              </div>
+            </>
+          )}
+        </aside>
+
+        {/* CENTER MAIN CHAT DISPLAY */}
+        <main className="glass-main-chat">
+          {/* Top Glass Header */}
+          <header className="chat-top-header">
+            <div className="header-left">
+              <div className="bot-header-avatar">
+                <span>🤖</span>
+              </div>
+              <div className="header-titles">
+                <div className="chat-bot-name">
+                  KeyFlow AI Assistant
+                  <span className="bot-status-pill">Online</span>
+                </div>
+                <div className="chat-session-sub">
+                  Session: <span className="mono-text">{currentSessionId}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Glowing Fluid Soundwave Visualizer */}
+            <div className="header-soundwave-wrap" title="Live Gateway Audio/AI Waveform">
+              <div className="soundwave-bar bar-1" />
+              <div className="soundwave-bar bar-2" />
+              <div className="soundwave-bar bar-3" />
+              <div className="soundwave-bar bar-4" />
+              <div className="soundwave-bar bar-5" />
+              <div className="soundwave-bar bar-6" />
+              <div className="soundwave-bar bar-7" />
+              <div className="soundwave-bar bar-8" />
+            </div>
+
+            {/* Failover Simulation Header Control */}
+            <div className="header-right">
+              <div className={`simulate-glass-pill ${simulateFailure ? "sim-active" : ""}`}>
+                <span className="sim-icon">⚠️</span>
+                <span className="sim-title">Failover Test:</span>
+                <input
+                  type="text"
+                  className="sim-input"
+                  placeholder="key_1=429"
+                  value={simulateFailure}
+                  onChange={(e) => setSimulateFailure(e.target.value)}
+                  title="Format: key_1=429, key_2=500, *=429"
+                />
+                <button
+                  className="sim-action-btn"
+                  onClick={() => setSimulateFailure((prev) => (prev ? "" : "key_1=429"))}
+                >
+                  {simulateFailure ? "Clear" : "Set"}
+                </button>
+              </div>
+            </div>
+          </header>
+
+          {/* Chat Messages Stream */}
+          <div className="messages-stream">
+            {messages.length === 0 ? (
+              <div className="hero-empty-state">
+                {/* 3D AI Robot illustration & Wave */}
+                <div className="hero-bot-showcase">
+                  <div className="hero-floating-orb" />
+                  <div className="hero-bot-avatar-large">
+                    <div className="hero-bot-face">
+                      <span className="eye-star">✦</span>
+                      <span className="smile-curve">‿</span>
+                      <span className="eye-star">✦</span>
+                    </div>
                   </div>
-                )}
-              </div>
-            </div>
+                </div>
 
-            {/* Stats */}
-            <div className="sidebar-section sidebar-stats">
-              <div className="stat-row">
-                <span className="stat-label">Total responses</span>
-                <span className="stat-val">{totalMessages}</span>
-              </div>
-              <div className="stat-row">
-                <span className="stat-label">Model</span>
-                <span className="stat-val model-chip">{currentModel}</span>
-              </div>
-            </div>
-          </>
-        )}
+                <h1 className="hero-title">Providing The Best Solutions</h1>
+                <p className="hero-description">
+                  Resilient Multi-Turn LLM Gateway with Automatic Key Failover & Deterministic Caching.
+                </p>
 
-        {/* Footer */}
-        <div className="sidebar-footer">
-          <div className="user-avatar">G</div>
-          {!sidebarCollapsed && <span className="user-label">Guest</span>}
-        </div>
-      </aside>
-
-      {/* CENTER CHAT */}
-      <main className="main-chat">
-        {/* Navbar */}
-        <header className="chat-navbar">
-          <div className="nav-left">
-            <div className="model-pill">
-              <span className="model-dot" />
-              <span>{currentModel}</span>
-            </div>
-            {messages.length > 0 && (
-              <div className="session-pill">{currentSessionId}</div>
-            )}
-          </div>
-
-          <div className="nav-center">
-            {!simulateFailure ? (
-              <div className="status-badge status-normal">
-                <span className="status-dot pulse-green-sm" />
-                All systems normal
+                {/* Quick Prompts Cards Grid */}
+                <div className="quick-prompts-grid">
+                  {QUICK_PROMPTS.map((qp, idx) => (
+                    <div
+                      key={idx}
+                      className="quick-prompt-card"
+                      onClick={() => {
+                        if (qp.simulation) setSimulateFailure(qp.simulation);
+                        handleSend(qp.prompt, qp.simulation);
+                      }}
+                    >
+                      <div className="qp-top">
+                        <span className="qp-icon">{qp.icon}</span>
+                        <span className="qp-arrow">↗</span>
+                      </div>
+                      <div className="qp-title">{qp.title}</div>
+                      <div className="qp-desc">{qp.desc}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
             ) : (
-              <div className="status-badge status-warn">
-                <span className="status-dot-warn" />
-                Failure simulation active
-              </div>
-            )}
-          </div>
-
-          <div className="nav-right">
-            <div className={`simulate-pill ${simulateFailure ? "simulate-active" : ""}`}>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-              </svg>
-              <span className="simulate-label">Simulate:</span>
-              <input
-                type="text"
-                className="simulate-input"
-                placeholder="key_1=429"
-                value={simulateFailure}
-                onChange={(e) => setSimulateFailure(e.target.value)}
-                title="Format: key_1=429, key_2=500, *=429 (all keys)"
-              />
-              <button
-                className="simulate-toggle-btn"
-                onClick={() => setSimulateFailure((prev) => (prev ? "" : "key_1=429"))}
-              >
-                {simulateFailure ? "Clear" : "Set"}
-              </button>
-            </div>
-          </div>
-        </header>
-
-        {/* Chat Stream */}
-        <div className="chat-stream">
-          {messages.length === 0 && (
-            <div className="empty-state">
-              <div className="empty-icon">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
-                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-                </svg>
-              </div>
-              <div className="empty-title">KeyFlow AI Gateway</div>
-              <div className="empty-desc">
-                Multi-turn conversation memory · LiteLLM key failover · Deterministic response caching
-              </div>
-              <div className="feature-cards">
-                <div className="feature-card">
-                  <div className="feature-icon fc-blue">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                    </svg>
-                  </div>
-                  <div className="feature-label">Multi-Turn Memory</div>
-                  <div className="feature-desc">Full conversation history stored in SQLite per session</div>
-                </div>
-                <div className="feature-card">
-                  <div className="feature-icon fc-purple">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-                    </svg>
-                  </div>
-                  <div className="feature-label">Response Cache</div>
-                  <div className="feature-desc">SHA-256 deterministic cache — identical prompts served instantly</div>
-                </div>
-                <div className="feature-card">
-                  <div className="feature-icon fc-amber">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-                    </svg>
-                  </div>
-                  <div className="feature-label">Key Failover</div>
-                  <div className="feature-desc">Sequential fallback across API key pool on 429/500 errors</div>
-                </div>
-              </div>
-              <div className="simulate-hint">
-                <code>key_1=429</code> → test failover &nbsp;|&nbsp; <code>*=429</code> → all keys fail
-              </div>
-            </div>
-          )}
-
-          {messages.map((m, idx) => {
-            if (m.role === "user") {
-              return (
-                <div key={idx} className="msg-row user-row">
-                  <div className="user-bubble">
-                    <div className="user-bubble-text">{m.content}</div>
-                    <div className="msg-timestamp">{formatTime(m.timestamp)}</div>
-                  </div>
-                  <div className="user-avatar-sm">U</div>
-                </div>
-              );
-            }
-
-            if (m.role === "error") {
-              return (
-                <div key={idx} className="msg-row">
-                  <div className="error-card">
-                    <div className="error-icon-wrap">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="10" />
-                        <line x1="12" y1="8" x2="12" y2="12" />
-                        <line x1="12" y1="16" x2="12.01" y2="16" />
-                      </svg>
+              messages.map((m, idx) => {
+                if (m.role === "user") {
+                  return (
+                    <div key={idx} className="bubble-row user-bubble-row">
+                      <div className="bubble-container user-bubble">
+                        <div className="bubble-content">{m.content}</div>
+                        <div className="bubble-time">{formatTime(m.timestamp)}</div>
+                      </div>
+                      <div className="user-icon-avatar">👤</div>
                     </div>
-                    <div className="error-content">
-                      <div className="error-title">Request Failed</div>
-                      <div className="error-msg">{m.content}</div>
-                    </div>
-                  </div>
-                </div>
-              );
-            }
+                  );
+                }
 
-            const meta = m.metadata || {};
-            const isCache = meta.resolution_source === "LLM_CACHE";
-            const isSelected = activeMessageIndex === idx;
-
-            return (
-              <React.Fragment key={idx}>
-                {meta.failover_note && (
-                  <div className="failover-banner">
-                    <svg className="failover-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="23 4 23 10 17 10" />
-                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-                    </svg>
-                    <span>{meta.failover_note}</span>
-                  </div>
-                )}
-
-                <div
-                  className={`msg-row assistant-row ${isSelected ? "row-selected" : ""}`}
-                  onClick={() => {
-                    setActiveMessageIndex(idx);
-                    setShowDetails(true);
-                  }}
-                >
-                  <div className="ai-avatar">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
-                      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-                      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-                    </svg>
-                  </div>
-
-                  <div className="assistant-container" data-testid="assistant-message">
-                    <div className="assistant-text">{m.content}</div>
-
-                    <div className="metadata-strip">
-                      <span
-                        data-testid="meta-source"
-                        className={`source-badge ${isCache ? "source-cache" : "source-live"}`}
-                      >
-                        <span className="badge-dot" />
-                        {meta.resolution_source || "LIVE_INFERENCE"}
-                      </span>
-
-                      {meta.fallback_attempts > 0 && (
-                        <span className="fallback-badge">
-                          {meta.fallback_attempts} {meta.fallback_attempts === 1 ? "fallback" : "fallbacks"}
-                        </span>
-                      )}
-
-                      <span data-testid="meta-latency" className="meta-chip">
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
-                        </svg>
-                        {meta.latency_ms} ms
-                      </span>
-
-                      <span className="meta-chip">
-                        <strong data-testid="meta-input-tokens">{meta.input_tokens}</strong>
-                        {" in · "}
-                        <strong data-testid="meta-output-tokens">{meta.output_tokens}</strong>
-                        {" out"}
-                      </span>
-
-                      {meta.key_id && (
-                        <span className="meta-chip meta-key-chip">{meta.key_id}</span>
-                      )}
-
-                      <span data-testid="meta-model" style={{ display: "none" }}>
-                        {meta.model || currentModel}
-                      </span>
-
-                      <div className="meta-actions">
-                        <CopyButton text={m.content} />
-                        <button
-                          className="details-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setActiveMessageIndex(idx);
-                            setShowDetails(true);
-                          }}
-                          title="View request details"
-                        >
-                          Details
-                        </button>
+                if (m.role === "error") {
+                  return (
+                    <div key={idx} className="bubble-row">
+                      <div className="glass-card error-bubble">
+                        <span className="error-alert-icon">⚠️</span>
+                        <div className="error-body">
+                          <div className="error-heading">Gateway Error</div>
+                          <div className="error-text">{m.content}</div>
+                        </div>
                       </div>
                     </div>
+                  );
+                }
 
-                    <div className="msg-timestamp">{formatTime(m.timestamp)}</div>
+                const meta = m.metadata || {};
+                const isCache = meta.resolution_source === "LLM_CACHE";
+                const isSelected = activeMessageIndex === idx;
+
+                return (
+                  <React.Fragment key={idx}>
+                    {/* Failover notice banner */}
+                    {meta.failover_note && (
+                      <div className="failover-glass-banner">
+                        <span className="failover-shield">🛡️</span>
+                        <span className="failover-text">{meta.failover_note}</span>
+                      </div>
+                    )}
+
+                    <div
+                      className={`bubble-row assistant-bubble-row ${isSelected ? "bubble-selected" : ""}`}
+                      onClick={() => {
+                        setActiveMessageIndex(idx);
+                        setShowDetails(true);
+                      }}
+                    >
+                      <div className="assistant-bot-avatar">
+                        <span>🤖</span>
+                      </div>
+
+                      <div className="bubble-container assistant-bubble" data-testid="assistant-message">
+                        <div className="bubble-content">{m.content}</div>
+
+                        {/* Metadata Tag Strip */}
+                        <div className="bubble-metadata-strip">
+                          <span
+                            data-testid="meta-source"
+                            className={`badge-source ${isCache ? "badge-cache" : "badge-live"}`}
+                          >
+                            <span className="source-dot" />
+                            {meta.resolution_source || "LIVE_INFERENCE"}
+                          </span>
+
+                          {meta.fallback_attempts > 0 && (
+                            <span className="badge-fallback">
+                              🔄 {meta.fallback_attempts} {meta.fallback_attempts === 1 ? "fallback" : "fallbacks"}
+                            </span>
+                          )}
+
+                          <span data-testid="meta-latency" className="badge-metric">
+                            ⏱️ {meta.latency_ms} ms
+                          </span>
+
+                          <span className="badge-metric">
+                            <strong data-testid="meta-input-tokens">{meta.input_tokens}</strong> in ·{" "}
+                            <strong data-testid="meta-output-tokens">{meta.output_tokens}</strong> out
+                          </span>
+
+                          {meta.key_id && (
+                            <span className="badge-key">
+                              🔑 {meta.key_id}
+                            </span>
+                          )}
+
+                          <span data-testid="meta-model" style={{ display: "none" }}>
+                            {meta.model || currentModel}
+                          </span>
+
+                          <div className="bubble-actions">
+                            <CopyButton text={m.content} />
+                            <button
+                              className="inspect-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveMessageIndex(idx);
+                                setShowDetails(true);
+                              }}
+                            >
+                              Inspector ↗
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="bubble-time">{formatTime(m.timestamp)}</div>
+                      </div>
+                    </div>
+                  </React.Fragment>
+                );
+              })
+            )}
+
+            {/* Animated Typing Indicator */}
+            {loading && (
+              <div className="bubble-row loading-row">
+                <div className="assistant-bot-avatar pulse-avatar">🤖</div>
+                <div className="loading-glass-card">
+                  <div className="glowing-wave-loader">
+                    <span className="dot dot-1" />
+                    <span className="dot dot-2" />
+                    <span className="dot dot-3" />
                   </div>
+                  <span className="loading-text">Resolving with key pool failover...</span>
                 </div>
-              </React.Fragment>
-            );
-          })}
-
-          {loading && <TypingIndicator />}
-
-          <div ref={bottomRef} />
-        </div>
-
-        {/* Input Area */}
-        <div className="chat-input-wrapper">
-          {showSystemPrompt && (
-            <div className="system-prompt-bar">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
-              <label className="sys-label">System prompt</label>
-              <input
-                id="sys-input"
-                data-testid="system-prompt-input"
-                type="text"
-                className="sys-input"
-                placeholder="e.g. You are a concise geography assistant."
-                value={systemPrompt}
-                onChange={(e) => setSystemPrompt(e.target.value)}
-              />
-              <button className="sys-clear" onClick={() => { setSystemPrompt(""); setShowSystemPrompt(false); }}>✕</button>
-            </div>
-          )}
-
-          <div className="input-card">
-            <textarea
-              ref={chatInputRef}
-              data-testid="chat-input"
-              rows={3}
-              className="chat-textarea"
-              placeholder="Message KeyFlow AI..."
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              maxLength={4000}
-            />
-
-            <div className="input-actions-bar">
-              <div className="actions-left">
-                <button
-                  type="button"
-                  className={`btn-action-pill ${showSystemPrompt || systemPrompt ? "pill-active" : ""}`}
-                  onClick={() => setShowSystemPrompt((prev) => !prev)}
-                  title="Set system prompt"
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-                  </svg>
-                  System prompt
-                  {systemPrompt && <span className="pill-dot" />}
-                </button>
-
-                <div className={`simulate-inline-pill ${simulateFailure ? "sim-on" : ""}`}>
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                    <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-                  </svg>
-                  <span>{simulateFailure ? `Fail: ${simulateFailure}` : "Simulate failure"}</span>
-                </div>
-              </div>
-
-              <div className="actions-right">
-                <span className={`char-count ${input.length > 3800 ? "char-warn" : ""}`}>
-                  {input.length}/4000
-                </span>
-                <button
-                  data-testid="send-button"
-                  type="button"
-                  className="btn-send"
-                  disabled={loading || !input.trim()}
-                  onClick={handleSend}
-                >
-                  {loading ? (
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="spin">
-                      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-                    </svg>
-                  ) : (
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
-                    </svg>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-          <div className="input-hint">
-            Enter to send · Shift+Enter for new line · Same prompt → cache hit
-          </div>
-        </div>
-      </main>
-
-      {/* RIGHT SIDEBAR */}
-      {showDetails && selectedAssistant && (
-        <aside className="sidebar-right">
-          <div className="details-header">
-            <div>
-              <div className="details-title">Request Details</div>
-              <div className="details-sub">
-                Reply {currentAssistantIndex + 1} of {assistantReplies.length}
-              </div>
-            </div>
-            <button className="btn-close-details" onClick={() => setShowDetails(false)}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
-
-          {/* Status Card */}
-          <div className={`status-card ${selectedAssistant.metadata?.resolution_source === "LLM_CACHE" ? "status-cache" : "status-live"}`}>
-            <div className="status-icon">
-              {selectedAssistant.metadata?.resolution_source === "LLM_CACHE" ? (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-                </svg>
-              ) : (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              )}
-            </div>
-            <div className="status-text">
-              {selectedAssistant.metadata?.resolution_source === "LLM_CACHE"
-                ? "Served instantly from deterministic local cache."
-                : selectedAssistant.metadata?.fallback_attempts > 0
-                ? `Answered by ${selectedAssistant.metadata?.key_id} after ${selectedAssistant.metadata?.fallback_attempts === 1 ? "one automatic fallback" : `${selectedAssistant.metadata?.fallback_attempts} fallbacks`}.`
-                : `Live inference via ${selectedAssistant.metadata?.key_id}.`}
-            </div>
-          </div>
-
-          {/* Metrics Grid */}
-          <div className="metrics-grid">
-            <div className="metric-box">
-              <div className="metric-label">Latency</div>
-              <div className="metric-value">{selectedAssistant.metadata?.latency_ms?.toLocaleString()}<span className="metric-unit"> ms</span></div>
-            </div>
-            <div className="metric-box">
-              <div className="metric-label">Fallbacks</div>
-              <div className={`metric-value ${(selectedAssistant.metadata?.fallback_attempts || 0) > 0 ? "metric-warn" : ""}`}>
-                {selectedAssistant.metadata?.fallback_attempts || 0}
-              </div>
-            </div>
-            <div className="metric-box">
-              <div className="metric-label">Input tokens</div>
-              <div className="metric-value">{selectedAssistant.metadata?.input_tokens || 0}</div>
-            </div>
-            <div className="metric-box">
-              <div className="metric-label">Output tokens</div>
-              <div className="metric-value">{selectedAssistant.metadata?.output_tokens || 0}</div>
-            </div>
-          </div>
-
-          {/* Timeline */}
-          <div className="details-section">
-            <div className="details-section-label">KEY RESOLUTION TIMELINE</div>
-
-            {selectedAssistant.metadata?.timeline && selectedAssistant.metadata.timeline.length > 1 && (
-              <div className="timeline-bar-wrap">
-                {selectedAssistant.metadata.timeline.map((step, si) => (
-                  <div
-                    key={si}
-                    className={`bar-seg ${step.status === 200 ? "bar-green" : "bar-amber"}`}
-                    style={{ flex: 1 }}
-                    title={`${step.key_id}: ${step.status} (${step.latency_ms}ms)`}
-                  />
-                ))}
               </div>
             )}
 
-            <div className="timeline-rows">
-              {selectedAssistant.metadata?.timeline?.map((step, sIdx) => (
-                <div key={sIdx} className="timeline-row">
-                  <div className="timeline-row-left">
-                    <span className={`dot ${step.status === 200 ? "dot-green" : "dot-amber"}`} />
-                    <span className="timeline-key">{step.key_id}</span>
-                    <span className={`timeline-code ${step.status === 200 ? "code-ok" : "code-err"}`}>
-                      {step.status}
-                    </span>
-                  </div>
-                  <div className="timeline-row-right">{step.latency_ms?.toLocaleString()} ms</div>
-                </div>
-              ))}
-              {!selectedAssistant.metadata?.timeline && (
-                <div className="timeline-row">
-                  <div className="timeline-row-left">
-                    <span className="dot dot-green" />
-                    <span className="timeline-key">{selectedAssistant.metadata?.key_id || "cache"}</span>
-                    <span className="timeline-code code-ok">200</span>
-                  </div>
-                  <div className="timeline-row-right">{selectedAssistant.metadata?.latency_ms} ms</div>
-                </div>
-              )}
-            </div>
+            <div ref={bottomRef} />
           </div>
 
-          {/* Cache Section */}
-          <div className="details-section">
-            <div className="details-section-label">CACHE STATUS</div>
-            <div className={`cache-status-box ${selectedAssistant.metadata?.resolution_source === "LLM_CACHE" ? "cache-hit" : "cache-miss"}`}>
-              <div className="cache-status-row">
-                <span>{selectedAssistant.metadata?.resolution_source === "LLM_CACHE" ? "HIT" : "MISS"}</span>
-                <span className="cache-status-badge">
-                  {selectedAssistant.metadata?.resolution_source === "LLM_CACHE" ? "0 tokens used" : "Stored for future"}
+          {/* Floating Glass Input Deck */}
+          <div className="floating-input-deck">
+            {/* System Prompt Drawer */}
+            {showSystemPrompt && (
+              <div className="system-prompt-glass-panel">
+                <span className="sys-icon">⚙️</span>
+                <label className="sys-title">System Prompt:</label>
+                <input
+                  id="sys-input"
+                  data-testid="system-prompt-input"
+                  type="text"
+                  className="sys-field"
+                  placeholder="e.g. You are a concise mathematical assistant."
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                />
+                <button
+                  className="sys-close-btn"
+                  onClick={() => {
+                    setSystemPrompt("");
+                    setShowSystemPrompt(false);
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            <div className="glass-input-card">
+              <textarea
+                ref={chatInputRef}
+                data-testid="chat-input"
+                rows={2}
+                className="glass-textarea"
+                placeholder="Ask KeyFlow AI anything (press Enter to send)..."
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                maxLength={4000}
+              />
+
+              <div className="input-toolbar">
+                <div className="toolbar-left">
+                  <button
+                    type="button"
+                    className={`tool-pill ${showSystemPrompt || systemPrompt ? "tool-pill-active" : ""}`}
+                    onClick={() => setShowSystemPrompt((prev) => !prev)}
+                  >
+                    <span>⚙️</span>
+                    <span>System Prompt</span>
+                    {systemPrompt && <span className="pill-active-dot" />}
+                  </button>
+
+                  <div className={`tool-pill simulate-indicator ${simulateFailure ? "sim-on" : ""}`}>
+                    <span>🛡️</span>
+                    <span>{simulateFailure ? `Failover: ${simulateFailure}` : "Failover: Auto"}</span>
+                  </div>
+                </div>
+
+                <div className="toolbar-right">
+                  <span className="char-badge">{input.length}/4000</span>
+                  <button
+                    data-testid="send-button"
+                    type="button"
+                    className="glowing-send-btn"
+                    disabled={loading || !input.trim()}
+                    onClick={() => handleSend()}
+                    title="Send message"
+                  >
+                    {loading ? (
+                      <span className="spinner-icon">◌</span>
+                    ) : (
+                      <span className="send-arrow">➔</span>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="input-footer-hint">
+              KeyFlow AI Gateway · LiteLLM Failover · SQLite Memory · SHA-256 Cache
+            </div>
+          </div>
+        </main>
+
+        {/* RIGHT SIDEBAR: REQUEST DETAILS INSPECTOR */}
+        {showDetails && selectedAssistant && (
+          <aside className="glass-details-sidebar">
+            <div className="details-top">
+              <div>
+                <h3 className="details-heading">Request Details</h3>
+                <span className="details-subhead">
+                  Reply {currentAssistantIndex + 1} of {assistantReplies.length}
                 </span>
               </div>
-              <div className="cache-status-desc">
-                {selectedAssistant.metadata?.resolution_source === "LLM_CACHE"
-                  ? "Exact prompt match found. No LLM call made — 0 token cost incurred."
-                  : "Reply stored in cache. Same prompt next time returns LLM_CACHE instantly."}
+              <button className="glass-icon-btn" onClick={() => setShowDetails(false)}>
+                ✕
+              </button>
+            </div>
+
+            {/* Resolution Status Card */}
+            <div
+              className={`glass-card status-indicator-card ${
+                selectedAssistant.metadata?.resolution_source === "LLM_CACHE"
+                  ? "card-cache-status"
+                  : "card-live-status"
+              }`}
+            >
+              <div className="status-hero-icon">
+                {selectedAssistant.metadata?.resolution_source === "LLM_CACHE" ? "⚡" : "✓"}
+              </div>
+              <div>
+                <div className="status-hero-title">
+                  {selectedAssistant.metadata?.resolution_source === "LLM_CACHE"
+                    ? "Served from LLM Cache"
+                    : "Live Model Inference"}
+                </div>
+                <div className="status-hero-desc">
+                  {selectedAssistant.metadata?.resolution_source === "LLM_CACHE"
+                    ? "Identical prompt found in local store. 0 token cost incurred."
+                    : selectedAssistant.metadata?.fallback_attempts > 0
+                    ? `Resolved by ${selectedAssistant.metadata?.key_id} after ${selectedAssistant.metadata?.fallback_attempts} fallback.`
+                    : `Resolved directly by primary ${selectedAssistant.metadata?.key_id}.`}
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Model Info */}
-          <div className="details-section">
-            <div className="details-section-label">MODEL</div>
-            <div className="model-info-box">
-              <div className="model-info-name">{selectedAssistant.metadata?.model || currentModel}</div>
-              <div className="model-info-sub">via LiteLLM · gemini provider</div>
+            {/* 2x2 Metric Tiles Grid */}
+            <div className="metrics-2x2-grid">
+              <div className="metric-glass-tile">
+                <span className="m-label">LATENCY</span>
+                <span className="m-val">{selectedAssistant.metadata?.latency_ms?.toLocaleString()} <span className="m-unit">ms</span></span>
+              </div>
+              <div className="metric-glass-tile">
+                <span className="m-label">FALLBACKS</span>
+                <span className={`m-val ${(selectedAssistant.metadata?.fallback_attempts || 0) > 0 ? "text-amber" : ""}`}>
+                  {selectedAssistant.metadata?.fallback_attempts || 0}
+                </span>
+              </div>
+              <div className="metric-glass-tile">
+                <span className="m-label">INPUT TOKENS</span>
+                <span className="m-val">{selectedAssistant.metadata?.input_tokens || 0}</span>
+              </div>
+              <div className="metric-glass-tile">
+                <span className="m-label">OUTPUT TOKENS</span>
+                <span className="m-val">{selectedAssistant.metadata?.output_tokens || 0}</span>
+              </div>
             </div>
-          </div>
-        </aside>
-      )}
+
+            {/* Key Resolution Timeline */}
+            <div className="glass-card section-card">
+              <div className="section-header">
+                <span className="section-title">RESOLUTION TIMELINE</span>
+              </div>
+
+              {selectedAssistant.metadata?.timeline && selectedAssistant.metadata.timeline.length > 1 && (
+                <div className="timeline-multi-bar">
+                  {selectedAssistant.metadata.timeline.map((step, si) => (
+                    <div
+                      key={si}
+                      className={`timeline-segment ${step.status === 200 ? "seg-green" : "seg-amber"}`}
+                      style={{ flex: 1 }}
+                    />
+                  ))}
+                </div>
+              )}
+
+              <div className="timeline-steps-list">
+                {selectedAssistant.metadata?.timeline?.map((step, sIdx) => (
+                  <div key={sIdx} className="timeline-step-row">
+                    <div className="step-left">
+                      <span className={`step-dot ${step.status === 200 ? "orb-green" : "orb-amber"}`} />
+                      <span className="step-key">{step.key_id}</span>
+                      <span className={`step-code ${step.status === 200 ? "code-200" : "code-fail"}`}>
+                        {step.status}
+                      </span>
+                    </div>
+                    <span className="step-ms">{step.latency_ms?.toLocaleString()} ms</span>
+                  </div>
+                ))}
+                {!selectedAssistant.metadata?.timeline && (
+                  <div className="timeline-step-row">
+                    <div className="step-left">
+                      <span className="step-dot orb-green" />
+                      <span className="step-key">{selectedAssistant.metadata?.key_id || "cache"}</span>
+                      <span className="step-code code-200">200 OK</span>
+                    </div>
+                    <span className="step-ms">{selectedAssistant.metadata?.latency_ms} ms</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Model & Infrastructure Info */}
+            <div className="glass-card section-card">
+              <div className="section-header">
+                <span className="section-title">ENGINE & PROTOCOL</span>
+              </div>
+              <div className="engine-info-rows">
+                <div className="engine-row">
+                  <span className="e-label">Model</span>
+                  <span className="e-val-mono">{selectedAssistant.metadata?.model || currentModel}</span>
+                </div>
+                <div className="engine-row">
+                  <span className="e-label">Provider</span>
+                  <span className="e-val">Google Gemini / LiteLLM</span>
+                </div>
+                <div className="engine-row">
+                  <span className="e-label">Storage</span>
+                  <span className="e-val">SQLite (Persistent)</span>
+                </div>
+              </div>
+            </div>
+          </aside>
+        )}
+      </div>
     </div>
   );
 }
