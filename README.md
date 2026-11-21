@@ -4,9 +4,11 @@
 ---
 
 ## 1. Live URLs
-- **Frontend Live URL**: *(To be populated upon cloud deploy: e.g. `https://lyftr-ai-llm-chatbot.vercel.app`)*
-- **Backend Live URL**: *(To be populated upon cloud deploy: e.g. `https://lyftr-ai-llm-chatbot.onrender.com`)*
-- **Swagger API Documentation**: `https://<backend-live-url>/docs`
+- **Frontend Live URL (Vercel)**: [https://lyftr-ai-llm-chatbot.vercel.app](https://lyftr-ai-llm-chatbot.vercel.app)
+- **Frontend Alternative (GitHub Pages)**: [https://rohitkumar3456256.github.io/lyftr-ai-llm-chatbot/](https://rohitkumar3456256.github.io/lyftr-ai-llm-chatbot/)
+- **Backend Live URL (Render)**: [https://lyftr-ai-llm-chatbot.onrender.com](https://lyftr-ai-llm-chatbot.onrender.com)
+- **Swagger API Documentation**: [https://lyftr-ai-llm-chatbot.onrender.com/docs](https://lyftr-ai-llm-chatbot.onrender.com/docs)
+- **Backend Health Check**: [https://lyftr-ai-llm-chatbot.onrender.com/health](https://lyftr-ai-llm-chatbot.onrender.com/health)
 - **GitHub Repository**: [https://github.com/RoHITKumar3456256/lyftr-ai-llm-chatbot](https://github.com/RoHITKumar3456256/lyftr-ai-llm-chatbot)
 - **Demo Video**: *(Link to 2–3 minute screen recording with voiceover)*
 
