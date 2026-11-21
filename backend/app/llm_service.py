@@ -117,6 +117,8 @@ def generate_chat_completion(
                 model=model,
                 messages=messages,
                 api_key=api_key,
+                max_tokens=600,
+                temperature=0.3,
             )
             reply = ""
             if hasattr(resp, "choices") and resp.choices:
