@@ -8,6 +8,13 @@ function generateSessionId() {
   return `s-${Math.random().toString(36).substring(2, 8)}`;
 }
 
+function getGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
 function formatTime(isoStr) {
   if (!isoStr) return "";
   try {
@@ -28,7 +35,7 @@ function CopyButton({ text }) {
     } catch {}
   };
   return (
-    <button className="glass-icon-btn" onClick={handleCopy} title="Copy response">
+    <button className="copilot-action-icon" onClick={handleCopy} title="Copy response">
       {copied ? (
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="20 6 9 17 4 12" />
@@ -43,32 +50,38 @@ function CopyButton({ text }) {
   );
 }
 
-const QUICK_PROMPTS = [
-  {
-    icon: "⚡",
-    title: "Test Deterministic Cache",
-    prompt: "What is the capital of India?",
-    desc: "Send once for live inference, then send again for instant LLM_CACHE hit."
-  },
-  {
-    icon: "🛡️",
-    title: "Simulate Key 1 Rate Limit",
-    prompt: "Calculate 25 * 40 and explain the steps.",
-    desc: "Uses key_1=429 simulation to trigger seamless fallback to key_2.",
-    simulation: "key_1=429"
-  },
-  {
-    icon: "🧠",
-    title: "Multi-Turn Memory Test",
-    prompt: "Remember my favorite framework is FastAPI. What was it?",
-    desc: "Tests session memory persistence in SQLite."
-  },
-  {
-    icon: "✨",
-    title: "Creative Assistant",
-    prompt: "Write a 3-line poem about high availability and AI gateways.",
-    desc: "Tests LLM response streaming and latency metrics."
-  }
+// Ribbon logo matching Microsoft Copilot
+function CopilotRibbon() {
+  return (
+    <svg className="copilot-ribbon-icon" viewBox="0 0 32 32" fill="none">
+      <defs>
+        <linearGradient id="copilotGrad1" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#00c6ff" />
+          <stop offset="100%" stopColor="#0072ff" />
+        </linearGradient>
+        <linearGradient id="copilotGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#f857a6" />
+          <stop offset="100%" stopColor="#ff5858" />
+        </linearGradient>
+        <linearGradient id="copilotGrad3" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#a8ff78" />
+          <stop offset="100%" stopColor="#78ffd6" />
+        </linearGradient>
+      </defs>
+      <path d="M8 12C8 7.58 11.58 4 16 4C20.42 4 24 7.58 24 12V20C24 24.42 20.42 28 16 28C11.58 28 8 24.42 8 20V12Z" fill="url(#copilotGrad1)" opacity="0.4" />
+      <circle cx="12" cy="14" r="6" fill="url(#copilotGrad2)" opacity="0.8" />
+      <circle cx="20" cy="18" r="6" fill="url(#copilotGrad3)" opacity="0.8" />
+      <circle cx="16" cy="16" r="4" fill="#ffffff" opacity="0.9" />
+    </svg>
+  );
+}
+
+const CHIPS = [
+  { label: "⚡ Test cache hit", prompt: "What is the capital of France?" },
+  { label: "🛡️ Simulate 429 failover", prompt: "Explain API rate limiting in 1 sentence.", sim: "key_1=429" },
+  { label: "🧠 Multi-turn memory", prompt: "Remember my favorite framework is FastAPI." },
+  { label: "📖 Explain architecture", prompt: "How does KeyFlow perform sequential failover across key pools?" },
+  { label: "✨ Make a plan", prompt: "Give me 3 best practices for deploying LLM applications." }
 ];
 
 export default function App() {
@@ -81,14 +94,14 @@ export default function App() {
   const [systemPrompt, setSystemPrompt] = useState("");
   const [showSystemPrompt, setShowSystemPrompt] = useState(false);
   const [simulateFailure, setSimulateFailure] = useState("");
+  const [showSimModal, setShowSimModal] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [cacheEnabled, setCacheEnabled] = useState(true);
   const [cacheHits, setCacheHits] = useState(0);
   const [activeMessageIndex, setActiveMessageIndex] = useState(null);
-  const [showDetails, setShowDetails] = useState(true);
+  const [showDetails, setShowDetails] = useState(false);
   const [currentModel, setCurrentModel] = useState("gemini-2.5-flash");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [toast, setToast] = useState(null);
 
   const bottomRef = useRef(null);
@@ -99,7 +112,7 @@ export default function App() {
 
   const showToast = useCallback((msg, type = "info") => {
     setToast({ msg, type });
-    setTimeout(() => setToast(null), 3200);
+    setTimeout(() => setToast(null), 3000);
   }, []);
 
   useEffect(() => {
@@ -109,16 +122,18 @@ export default function App() {
   const handleNewSession = () => {
     const id = generateSessionId();
     const label = `Session ${sessions.length + 1}`;
-    setSessions((prev) => [ { id, label, createdAt: new Date().toISOString() }, ...prev ]);
+    setSessions((prev) => [{ id, label, createdAt: new Date().toISOString() }, ...prev]);
     setActiveSessionId(id);
     setActiveMessageIndex(null);
+    setShowDetails(false);
     setInput("");
-    showToast("✨ Started new session", "success");
+    showToast("✨ Started new conversation", "success");
   };
 
   const handleSelectSession = (id) => {
     setActiveSessionId(id);
     setActiveMessageIndex(null);
+    setShowDetails(false);
     setInput("");
   };
 
@@ -175,9 +190,9 @@ export default function App() {
 
       if (data.metadata?.resolution_source === "LLM_CACHE") {
         setCacheHits((c) => c + 1);
-        showToast("⚡ Served instantly from deterministic cache!", "cache");
+        showToast("⚡ Served from deterministic cache (0 tokens)", "cache");
       } else if (data.metadata?.fallback_attempts > 0) {
-        showToast(`🛡️ Failover activated: ${data.metadata.fallback_attempts} fallback attempt(s)`, "warn");
+        showToast(`🛡️ Failover activated: ${data.metadata.fallback_attempts} fallback(s)`, "warn");
       }
 
       if (data.metadata?.model) {
@@ -233,284 +248,317 @@ export default function App() {
       ? assistantReplies[currentAssistantIndex]
       : assistantReplies[assistantReplies.length - 1] || null;
 
-  const isKey1Simulated =
-    simulateFailure.includes("key_1") || simulateFailure.includes("*=");
-  const isKey2Simulated =
-    simulateFailure.includes("key_2") || simulateFailure.includes("*=");
+  const isKey1Simulated = simulateFailure.includes("key_1") || simulateFailure.includes("*=");
+  const isKey2Simulated = simulateFailure.includes("key_2") || simulateFailure.includes("*=");
+
+  const greeting = getGreeting();
 
   return (
-    <div className="simy-app-root">
-      {/* Background ambient iridescent glows */}
-      <div className="bg-glow bg-glow-1" />
-      <div className="bg-glow bg-glow-2" />
-      <div className="bg-glow bg-glow-3" />
+    <div className="copilot-window-root">
+      {/* Background wallpaper with dark overlay */}
+      <div className="copilot-backdrop-wallpaper" />
+      <div className="copilot-backdrop-overlay" />
 
-      {/* Floating Toast Notification */}
+      {/* Floating Toast */}
       {toast && (
-        <div className={`floating-toast toast-${toast.type}`}>
+        <div className={`copilot-floating-toast toast-${toast.type}`}>
           <span className="toast-dot" />
           <span>{toast.msg}</span>
         </div>
       )}
 
-      {/* 3-COLUMN GLASS CONTAINER */}
-      <div className="simy-glass-container">
-        
-        {/* LEFT SIDEBAR: SESSIONS, KEYS & CACHE */}
-        <aside className={`glass-sidebar ${sidebarOpen ? "open" : "collapsed"}`}>
-          {/* Brand & Bot Avatar */}
-          <div className="sidebar-brand-card">
-            <div className="bot-avatar-3d">
-              <div className="bot-head">
-                <span className="bot-eye left">✦</span>
-                <span className="bot-smile">‿</span>
-                <span className="bot-eye right">✦</span>
-              </div>
-              <div className="online-indicator" />
+      {/* Top Desktop App Navigation Bar */}
+      <header className="copilot-top-navbar">
+        <div className="nav-brand-group">
+          <CopilotRibbon />
+          <span className="copilot-brand-title">KeyFlow</span>
+          <button className="nav-icon-btn" onClick={handleNewSession} title="New chat session">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+          </button>
+          <div className="session-select-pill" title="Current session ID">
+            <span className="status-live-dot" />
+            <span>{currentSessionId}</span>
+          </div>
+        </div>
+
+        <div className="nav-center-status">
+          <div className="status-indicator-pill">
+            <span className="pill-dot-emerald" />
+            <span>All systems operational · 2 Keys configured</span>
+          </div>
+        </div>
+
+        <div className="nav-window-controls">
+          <a
+            href={`${API_BASE_URL}/docs`}
+            target="_blank"
+            rel="noreferrer"
+            className="copilot-link-pill"
+            title="Open Swagger API documentation"
+          >
+            Swagger Docs ↗
+          </a>
+          <button className="win-btn win-min" title="Minimize">─</button>
+          <button className="win-btn win-max" title="Maximize">□</button>
+          <button className="win-btn win-close" title="Close">✕</button>
+        </div>
+      </header>
+
+      {/* Main Content Area */}
+      <div className="copilot-body-layout">
+        {messages.length === 0 ? (
+          /* ================= HERO VIEW (MATCHING COPILOT DESKTOP SCREENSHOT) ================= */
+          <div className="copilot-hero-container">
+            {/* Greeting */}
+            <div className="hero-greeting-box">
+              <h1 className="hero-greeting-title">{greeting}, Rohit</h1>
+              <h2 className="hero-greeting-sub">What can I help you with today?</h2>
             </div>
-            {sidebarOpen && (
-              <div className="brand-meta">
-                <div className="brand-title-wrap">
-                  <span className="brand-title">KeyFlow</span>
-                  <span className="pro-badge">AI 2.0</span>
+
+            {/* Central Large Pill Search/Input Box */}
+            <div className="copilot-center-input-card">
+              <textarea
+                data-testid="chat-input"
+                rows={2}
+                className="center-input-textarea"
+                placeholder="Ask anything"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                maxLength={4000}
+              />
+
+              <div className="center-input-bottom-bar">
+                {/* Model dropdown pill */}
+                <div className="model-selector-pill">
+                  <CopilotRibbon />
+                  <span className="model-name-text">{currentModel}</span>
+                  <span className="chevron-down">▾</span>
                 </div>
-                <span className="brand-sub">Lyftr Resilient Gateway</span>
+
+                <div className="center-actions-right">
+                  {/* System Prompt Toggle Button */}
+                  <button
+                    className={`tool-icon-btn ${showSystemPrompt ? "tool-active" : ""}`}
+                    onClick={() => setShowSystemPrompt((p) => !p)}
+                    title="Toggle System Prompt Drawer"
+                  >
+                    +
+                  </button>
+
+                  {/* Failover Simulation Icon Button */}
+                  <button
+                    className={`tool-icon-btn ${simulateFailure ? "tool-sim-on" : ""}`}
+                    onClick={() => setShowSimModal((p) => !p)}
+                    title="Configure Key Failover Simulation"
+                  >
+                    🛡️
+                  </button>
+
+                  {/* Send Button */}
+                  <button
+                    data-testid="send-button"
+                    className="center-send-circle-btn"
+                    disabled={loading || !input.trim()}
+                    onClick={() => handleSend()}
+                    title="Send message"
+                  >
+                    {loading ? (
+                      <span className="spinner-icon">◌</span>
+                    ) : (
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* System Prompt Expandable Bar */}
+            {showSystemPrompt && (
+              <div className="center-system-prompt-drawer">
+                <span className="sys-badge">System Prompt:</span>
+                <input
+                  data-testid="system-prompt-input"
+                  type="text"
+                  className="center-sys-field"
+                  placeholder="e.g. You are a concise mathematical assistant."
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                />
+                <button className="sys-clear-btn" onClick={() => { setSystemPrompt(""); setShowSystemPrompt(false); }}>✕</button>
               </div>
             )}
-            <button
-              className="glass-icon-btn collapse-btn"
-              onClick={() => setSidebarOpen((p) => !p)}
-              title="Toggle sidebar"
-            >
-              {sidebarOpen ? "◀" : "▶"}
-            </button>
-          </div>
 
-          {sidebarOpen && (
-            <>
-              {/* Action: New Session */}
-              <button className="primary-glass-btn new-session-btn" onClick={handleNewSession}>
-                <span className="btn-icon">＋</span>
-                <span>Start New Chat</span>
-              </button>
+            {/* Failover Simulation Popup */}
+            {showSimModal && (
+              <div className="center-sim-modal">
+                <span className="sim-modal-title">Failover Simulation Hook:</span>
+                <input
+                  type="text"
+                  className="sim-modal-input"
+                  placeholder="key_1=429"
+                  value={simulateFailure}
+                  onChange={(e) => setSimulateFailure(e.target.value)}
+                />
+                <button
+                  className="sim-modal-set-btn"
+                  onClick={() => {
+                    if (!simulateFailure) setSimulateFailure("key_1=429");
+                    setShowSimModal(false);
+                    showToast("Failover simulation updated", "warn");
+                  }}
+                >
+                  Apply
+                </button>
+                <button className="sim-modal-clear-btn" onClick={() => { setSimulateFailure(""); setShowSimModal(false); }}>
+                  Clear
+                </button>
+              </div>
+            )}
 
-              {/* Provider Keys Pool Card */}
-              <div className="glass-card section-card">
-                <div className="section-header">
-                  <span className="section-title">PROVIDER KEY POOL</span>
-                  <span className="pool-count">2 Keys</span>
+            {/* Suggestion Chips Below Input */}
+            <div className="hero-chips-row">
+              {CHIPS.map((chip, idx) => (
+                <button
+                  key={idx}
+                  className="copilot-chip-btn"
+                  onClick={() => {
+                    if (chip.sim) setSimulateFailure(chip.sim);
+                    handleSend(chip.prompt, chip.sim);
+                  }}
+                >
+                  {chip.label}
+                </button>
+              ))}
+            </div>
+
+            {/* ================= 3 FLOATING FROSTED CARDS AT BOTTOM ================= */}
+            <div className="copilot-three-cards-grid">
+              {/* Card 1: Provider Keys Pool */}
+              <div className="copilot-bottom-card">
+                <div className="card-top-row">
+                  <div className="card-top-left">
+                    <span className="card-icon">🔑</span>
+                    <span className="card-title">Provider Keys Pool</span>
+                  </div>
+                  <span className="card-info-icon" title="LiteLLM Key Pool with sequential failover">ⓘ</span>
                 </div>
-                <div className="keys-stack">
-                  <div className={`key-tile ${isKey1Simulated ? "tile-simulated" : "tile-active"}`}>
-                    <div className="key-info">
-                      <span className={`status-orb ${isKey1Simulated ? "orb-amber" : "orb-green"}`} />
-                      <span className="key-code">key_1</span>
+                <div className="card-items-list">
+                  <div className={`card-list-item ${isKey1Simulated ? "item-warn" : ""}`}>
+                    <div className="item-icon-box">
+                      <span className={`orb ${isKey1Simulated ? "orb-amber" : "orb-green"}`} />
                     </div>
-                    <span className="key-status-tag">
-                      {isKey1Simulated ? "Simulated Fail" : "Healthy (Primary)"}
-                    </span>
+                    <div className="item-text-box">
+                      <div className="item-primary-text">key_1 (Primary Key)</div>
+                      <div className="item-secondary-text">{isKey1Simulated ? "Simulated 429 · Retrying" : "Healthy · Active"}</div>
+                    </div>
+                    <span className="item-action-dots">•••</span>
                   </div>
 
-                  <div className={`key-tile ${isKey2Simulated ? "tile-simulated" : "tile-active"}`}>
-                    <div className="key-info">
-                      <span className={`status-orb ${isKey2Simulated ? "orb-amber" : "orb-green"}`} />
-                      <span className="key-code">key_2</span>
+                  <div className={`card-list-item ${isKey2Simulated ? "item-warn" : ""}`}>
+                    <div className="item-icon-box">
+                      <span className={`orb ${isKey2Simulated ? "orb-amber" : "orb-green"}`} />
                     </div>
-                    <span className="key-status-tag">
-                      {isKey2Simulated ? "Simulated Fail" : "Healthy (Fallback)"}
-                    </span>
+                    <div className="item-text-box">
+                      <div className="item-primary-text">key_2 (Fallback Key)</div>
+                      <div className="item-secondary-text">{isKey2Simulated ? "Simulated Fail" : "Healthy · Standby"}</div>
+                    </div>
+                    <span className="item-action-dots">•••</span>
                   </div>
                 </div>
               </div>
 
-              {/* Response Cache Card */}
-              <div className="glass-card section-card">
-                <div className="section-header">
-                  <span className="section-title">DETERMINISTIC CACHE</span>
-                  <span className="cache-counter">{cacheHits} {cacheHits === 1 ? "hit" : "hits"}</span>
-                </div>
-                <div className="cache-toggle-row">
-                  <div>
-                    <div className="cache-mode-label">{cacheEnabled ? "Active & Serving" : "Disabled"}</div>
-                    <div className="cache-sub-label">SHA-256 prompt digest</div>
+              {/* Card 2: Deterministic Cache & Storage */}
+              <div className="copilot-bottom-card">
+                <div className="card-top-row">
+                  <div className="card-top-left">
+                    <span className="card-icon">⚡</span>
+                    <span className="card-title">Deterministic Cache</span>
                   </div>
-                  <label className="ios-switch">
-                    <input
-                      type="checkbox"
-                      checked={cacheEnabled}
-                      onChange={(e) => setCacheEnabled(e.target.checked)}
-                    />
-                    <span className="ios-slider" />
-                  </label>
+                  <span className="card-info-icon" title="SHA-256 prompt response caching">ⓘ</span>
+                </div>
+                <div className="card-cache-body">
+                  <div className="cache-toggle-line">
+                    <span className="cache-status-label">{cacheEnabled ? "Cache Enabled" : "Cache Disabled"}</span>
+                    <label className="copilot-switch">
+                      <input
+                        type="checkbox"
+                        checked={cacheEnabled}
+                        onChange={(e) => setCacheEnabled(e.target.checked)}
+                      />
+                      <span className="copilot-slider" />
+                    </label>
+                  </div>
+                  <div className="cache-stats-badge">
+                    <span>{cacheHits} total cache hits</span>
+                    <span className="cache-tech-tag">SHA-256</span>
+                  </div>
+                  <div className="cache-desc-text">
+                    Identical prompts across sessions return instantly with 0ms token latency.
+                  </div>
                 </div>
               </div>
 
-              {/* Sessions History List */}
-              <div className="glass-card section-card sessions-card">
-                <div className="section-header">
-                  <span className="section-title">CONVERSATIONS</span>
-                  <span className="sessions-badge">{sessions.length}</span>
+              {/* Card 3: Recent Conversations (Session Memory) */}
+              <div className="copilot-bottom-card">
+                <div className="card-top-row">
+                  <div className="card-top-left">
+                    <span className="card-icon">💬</span>
+                    <span className="card-title">Keep talking to KeyFlow</span>
+                  </div>
+                  <button className="card-new-btn" onClick={handleNewSession} title="Start new session">＋</button>
                 </div>
-                <div className="sessions-scroll">
-                  {sessions.map((s) => {
+                <div className="card-items-list">
+                  {sessions.slice(0, 3).map((s) => {
                     const isActive = s.id === currentSessionId;
-                    const sessionMsgs = messagesBySession[s.id] || [];
+                    const count = (messagesBySession[s.id] || []).length;
                     return (
-                      <button
+                      <div
                         key={s.id}
-                        className={`session-row ${isActive ? "active-session" : ""}`}
+                        className={`card-list-item clickable ${isActive ? "item-active" : ""}`}
                         onClick={() => handleSelectSession(s.id)}
                       >
-                        <span className="session-icon">{isActive ? "💬" : "▫️"}</span>
-                        <div className="session-text-wrap">
-                          <span className="session-name">{s.label}</span>
-                          <span className="session-id-tag">{s.id} · {sessionMsgs.length} msgs</span>
+                        <div className="item-icon-box">💬</div>
+                        <div className="item-text-box">
+                          <div className="item-primary-text">{s.label}</div>
+                          <div className="item-secondary-text">{count > 0 ? `${count} messages` : "Just now"} · {s.id}</div>
                         </div>
-                        <span className="session-arrow">→</span>
-                      </button>
+                        <span className="item-action-dots">•••</span>
+                      </div>
                     );
                   })}
                 </div>
               </div>
-
-              {/* Footer info */}
-              <div className="sidebar-bottom-bar">
-                <div className="model-chip-live">
-                  <span className="pulse-dot-cyan" />
-                  <span>{currentModel}</span>
-                </div>
-                <a
-                  href={`${API_BASE_URL}/docs`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="docs-link"
-                  title="Open Swagger API documentation"
-                >
-                  Swagger ↗
-                </a>
-              </div>
-            </>
-          )}
-        </aside>
-
-        {/* CENTER MAIN CHAT DISPLAY */}
-        <main className="glass-main-chat">
-          {/* Top Glass Header */}
-          <header className="chat-top-header">
-            <div className="header-left">
-              <div className="bot-header-avatar">
-                <span>🤖</span>
-              </div>
-              <div className="header-titles">
-                <div className="chat-bot-name">
-                  KeyFlow AI Assistant
-                  <span className="bot-status-pill">Online</span>
-                </div>
-                <div className="chat-session-sub">
-                  Session: <span className="mono-text">{currentSessionId}</span>
-                </div>
-              </div>
             </div>
-
-            {/* Glowing Fluid Soundwave Visualizer */}
-            <div className="header-soundwave-wrap" title="Live Gateway Audio/AI Waveform">
-              <div className="soundwave-bar bar-1" />
-              <div className="soundwave-bar bar-2" />
-              <div className="soundwave-bar bar-3" />
-              <div className="soundwave-bar bar-4" />
-              <div className="soundwave-bar bar-5" />
-              <div className="soundwave-bar bar-6" />
-              <div className="soundwave-bar bar-7" />
-              <div className="soundwave-bar bar-8" />
-            </div>
-
-            {/* Failover Simulation Header Control */}
-            <div className="header-right">
-              <div className={`simulate-glass-pill ${simulateFailure ? "sim-active" : ""}`}>
-                <span className="sim-icon">⚠️</span>
-                <span className="sim-title">Failover Test:</span>
-                <input
-                  type="text"
-                  className="sim-input"
-                  placeholder="key_1=429"
-                  value={simulateFailure}
-                  onChange={(e) => setSimulateFailure(e.target.value)}
-                  title="Format: key_1=429, key_2=500, *=429"
-                />
-                <button
-                  className="sim-action-btn"
-                  onClick={() => setSimulateFailure((prev) => (prev ? "" : "key_1=429"))}
-                >
-                  {simulateFailure ? "Clear" : "Set"}
-                </button>
-              </div>
-            </div>
-          </header>
-
-          {/* Chat Messages Stream */}
-          <div className="messages-stream">
-            {messages.length === 0 ? (
-              <div className="hero-empty-state">
-                {/* 3D AI Robot illustration & Wave */}
-                <div className="hero-bot-showcase">
-                  <div className="hero-floating-orb" />
-                  <div className="hero-bot-avatar-large">
-                    <div className="hero-bot-face">
-                      <span className="eye-star">✦</span>
-                      <span className="smile-curve">‿</span>
-                      <span className="eye-star">✦</span>
-                    </div>
-                  </div>
-                </div>
-
-                <h1 className="hero-title">Providing The Best Solutions</h1>
-                <p className="hero-description">
-                  Resilient Multi-Turn LLM Gateway with Automatic Key Failover & Deterministic Caching.
-                </p>
-
-                {/* Quick Prompts Cards Grid */}
-                <div className="quick-prompts-grid">
-                  {QUICK_PROMPTS.map((qp, idx) => (
-                    <div
-                      key={idx}
-                      className="quick-prompt-card"
-                      onClick={() => {
-                        if (qp.simulation) setSimulateFailure(qp.simulation);
-                        handleSend(qp.prompt, qp.simulation);
-                      }}
-                    >
-                      <div className="qp-top">
-                        <span className="qp-icon">{qp.icon}</span>
-                        <span className="qp-arrow">↗</span>
-                      </div>
-                      <div className="qp-title">{qp.title}</div>
-                      <div className="qp-desc">{qp.desc}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              messages.map((m, idx) => {
+          </div>
+        ) : (
+          /* ================= CHAT VIEW (ACTIVE CONVERSATION) ================= */
+          <div className="copilot-chat-container">
+            <div className="chat-stream-area">
+              {messages.map((m, idx) => {
                 if (m.role === "user") {
                   return (
-                    <div key={idx} className="bubble-row user-bubble-row">
-                      <div className="bubble-container user-bubble">
-                        <div className="bubble-content">{m.content}</div>
-                        <div className="bubble-time">{formatTime(m.timestamp)}</div>
+                    <div key={idx} className="copilot-msg-row user-row">
+                      <div className="copilot-user-bubble">
+                        <div className="msg-content">{m.content}</div>
+                        <div className="msg-meta-time">{formatTime(m.timestamp)}</div>
                       </div>
-                      <div className="user-icon-avatar">👤</div>
                     </div>
                   );
                 }
 
                 if (m.role === "error") {
                   return (
-                    <div key={idx} className="bubble-row">
-                      <div className="glass-card error-bubble">
-                        <span className="error-alert-icon">⚠️</span>
-                        <div className="error-body">
-                          <div className="error-heading">Gateway Error</div>
-                          <div className="error-text">{m.content}</div>
+                    <div key={idx} className="copilot-msg-row">
+                      <div className="copilot-error-card">
+                        <span className="err-icon">⚠️</span>
+                        <div>
+                          <div className="err-title">Request Error</div>
+                          <div className="err-msg">{m.content}</div>
                         </div>
                       </div>
                     </div>
@@ -523,55 +571,55 @@ export default function App() {
 
                 return (
                   <React.Fragment key={idx}>
-                    {/* Failover notice banner */}
+                    {/* Failover Alert Banner */}
                     {meta.failover_note && (
-                      <div className="failover-glass-banner">
-                        <span className="failover-shield">🛡️</span>
-                        <span className="failover-text">{meta.failover_note}</span>
+                      <div className="copilot-failover-banner">
+                        <span className="banner-shield">🛡️</span>
+                        <span>{meta.failover_note}</span>
                       </div>
                     )}
 
                     <div
-                      className={`bubble-row assistant-bubble-row ${isSelected ? "bubble-selected" : ""}`}
+                      className={`copilot-msg-row assistant-row ${isSelected ? "row-selected" : ""}`}
                       onClick={() => {
                         setActiveMessageIndex(idx);
                         setShowDetails(true);
                       }}
                     >
-                      <div className="assistant-bot-avatar">
-                        <span>🤖</span>
+                      <div className="copilot-avatar-col">
+                        <CopilotRibbon />
                       </div>
 
-                      <div className="bubble-container assistant-bubble" data-testid="assistant-message">
-                        <div className="bubble-content">{m.content}</div>
+                      <div className="copilot-assistant-bubble" data-testid="assistant-message">
+                        <div className="msg-content">{m.content}</div>
 
-                        {/* Metadata Tag Strip */}
-                        <div className="bubble-metadata-strip">
+                        {/* Metadata Strip */}
+                        <div className="copilot-metadata-strip">
                           <span
                             data-testid="meta-source"
                             className={`badge-source ${isCache ? "badge-cache" : "badge-live"}`}
                           >
-                            <span className="source-dot" />
+                            <span className="badge-dot" />
                             {meta.resolution_source || "LIVE_INFERENCE"}
                           </span>
 
                           {meta.fallback_attempts > 0 && (
                             <span className="badge-fallback">
-                              🔄 {meta.fallback_attempts} {meta.fallback_attempts === 1 ? "fallback" : "fallbacks"}
+                              🔄 {meta.fallback_attempts} fallback(s)
                             </span>
                           )}
 
-                          <span data-testid="meta-latency" className="badge-metric">
+                          <span data-testid="meta-latency" className="badge-chip">
                             ⏱️ {meta.latency_ms} ms
                           </span>
 
-                          <span className="badge-metric">
+                          <span className="badge-chip">
                             <strong data-testid="meta-input-tokens">{meta.input_tokens}</strong> in ·{" "}
                             <strong data-testid="meta-output-tokens">{meta.output_tokens}</strong> out
                           </span>
 
                           {meta.key_id && (
-                            <span className="badge-key">
+                            <span className="badge-chip badge-key-mono">
                               🔑 {meta.key_id}
                             </span>
                           )}
@@ -580,262 +628,210 @@ export default function App() {
                             {meta.model || currentModel}
                           </span>
 
-                          <div className="bubble-actions">
+                          <div className="bubble-actions-right">
                             <CopyButton text={m.content} />
                             <button
-                              className="inspect-btn"
+                              className="copilot-inspect-btn"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setActiveMessageIndex(idx);
                                 setShowDetails(true);
                               }}
                             >
-                              Inspector ↗
+                              Details ↗
                             </button>
                           </div>
                         </div>
 
-                        <div className="bubble-time">{formatTime(m.timestamp)}</div>
+                        <div className="msg-meta-time">{formatTime(m.timestamp)}</div>
                       </div>
                     </div>
                   </React.Fragment>
                 );
-              })
-            )}
+              })}
 
-            {/* Animated Typing Indicator */}
-            {loading && (
-              <div className="bubble-row loading-row">
-                <div className="assistant-bot-avatar pulse-avatar">🤖</div>
-                <div className="loading-glass-card">
-                  <div className="glowing-wave-loader">
-                    <span className="dot dot-1" />
-                    <span className="dot dot-2" />
-                    <span className="dot dot-3" />
+              {loading && (
+                <div className="copilot-msg-row assistant-row">
+                  <div className="copilot-avatar-col">
+                    <CopilotRibbon />
                   </div>
-                  <span className="loading-text">Resolving with key pool failover...</span>
-                </div>
-              </div>
-            )}
-
-            <div ref={bottomRef} />
-          </div>
-
-          {/* Floating Glass Input Deck */}
-          <div className="floating-input-deck">
-            {/* System Prompt Drawer */}
-            {showSystemPrompt && (
-              <div className="system-prompt-glass-panel">
-                <span className="sys-icon">⚙️</span>
-                <label className="sys-title">System Prompt:</label>
-                <input
-                  id="sys-input"
-                  data-testid="system-prompt-input"
-                  type="text"
-                  className="sys-field"
-                  placeholder="e.g. You are a concise mathematical assistant."
-                  value={systemPrompt}
-                  onChange={(e) => setSystemPrompt(e.target.value)}
-                />
-                <button
-                  className="sys-close-btn"
-                  onClick={() => {
-                    setSystemPrompt("");
-                    setShowSystemPrompt(false);
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
-            )}
-
-            <div className="glass-input-card">
-              <textarea
-                ref={chatInputRef}
-                data-testid="chat-input"
-                rows={2}
-                className="glass-textarea"
-                placeholder="Ask KeyFlow AI anything (press Enter to send)..."
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                maxLength={4000}
-              />
-
-              <div className="input-toolbar">
-                <div className="toolbar-left">
-                  <button
-                    type="button"
-                    className={`tool-pill ${showSystemPrompt || systemPrompt ? "tool-pill-active" : ""}`}
-                    onClick={() => setShowSystemPrompt((prev) => !prev)}
-                  >
-                    <span>⚙️</span>
-                    <span>System Prompt</span>
-                    {systemPrompt && <span className="pill-active-dot" />}
-                  </button>
-
-                  <div className={`tool-pill simulate-indicator ${simulateFailure ? "sim-on" : ""}`}>
-                    <span>🛡️</span>
-                    <span>{simulateFailure ? `Failover: ${simulateFailure}` : "Failover: Auto"}</span>
+                  <div className="copilot-typing-bubble">
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
+                    <span className="typing-label">KeyFlow is resolving with LiteLLM...</span>
                   </div>
-                </div>
-
-                <div className="toolbar-right">
-                  <span className="char-badge">{input.length}/4000</span>
-                  <button
-                    data-testid="send-button"
-                    type="button"
-                    className="glowing-send-btn"
-                    disabled={loading || !input.trim()}
-                    onClick={() => handleSend()}
-                    title="Send message"
-                  >
-                    {loading ? (
-                      <span className="spinner-icon">◌</span>
-                    ) : (
-                      <span className="send-arrow">➔</span>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div className="input-footer-hint">
-              KeyFlow AI Gateway · LiteLLM Failover · SQLite Memory · SHA-256 Cache
-            </div>
-          </div>
-        </main>
-
-        {/* RIGHT SIDEBAR: REQUEST DETAILS INSPECTOR */}
-        {showDetails && selectedAssistant && (
-          <aside className="glass-details-sidebar">
-            <div className="details-top">
-              <div>
-                <h3 className="details-heading">Request Details</h3>
-                <span className="details-subhead">
-                  Reply {currentAssistantIndex + 1} of {assistantReplies.length}
-                </span>
-              </div>
-              <button className="glass-icon-btn" onClick={() => setShowDetails(false)}>
-                ✕
-              </button>
-            </div>
-
-            {/* Resolution Status Card */}
-            <div
-              className={`glass-card status-indicator-card ${
-                selectedAssistant.metadata?.resolution_source === "LLM_CACHE"
-                  ? "card-cache-status"
-                  : "card-live-status"
-              }`}
-            >
-              <div className="status-hero-icon">
-                {selectedAssistant.metadata?.resolution_source === "LLM_CACHE" ? "⚡" : "✓"}
-              </div>
-              <div>
-                <div className="status-hero-title">
-                  {selectedAssistant.metadata?.resolution_source === "LLM_CACHE"
-                    ? "Served from LLM Cache"
-                    : "Live Model Inference"}
-                </div>
-                <div className="status-hero-desc">
-                  {selectedAssistant.metadata?.resolution_source === "LLM_CACHE"
-                    ? "Identical prompt found in local store. 0 token cost incurred."
-                    : selectedAssistant.metadata?.fallback_attempts > 0
-                    ? `Resolved by ${selectedAssistant.metadata?.key_id} after ${selectedAssistant.metadata?.fallback_attempts} fallback.`
-                    : `Resolved directly by primary ${selectedAssistant.metadata?.key_id}.`}
-                </div>
-              </div>
-            </div>
-
-            {/* 2x2 Metric Tiles Grid */}
-            <div className="metrics-2x2-grid">
-              <div className="metric-glass-tile">
-                <span className="m-label">LATENCY</span>
-                <span className="m-val">{selectedAssistant.metadata?.latency_ms?.toLocaleString()} <span className="m-unit">ms</span></span>
-              </div>
-              <div className="metric-glass-tile">
-                <span className="m-label">FALLBACKS</span>
-                <span className={`m-val ${(selectedAssistant.metadata?.fallback_attempts || 0) > 0 ? "text-amber" : ""}`}>
-                  {selectedAssistant.metadata?.fallback_attempts || 0}
-                </span>
-              </div>
-              <div className="metric-glass-tile">
-                <span className="m-label">INPUT TOKENS</span>
-                <span className="m-val">{selectedAssistant.metadata?.input_tokens || 0}</span>
-              </div>
-              <div className="metric-glass-tile">
-                <span className="m-label">OUTPUT TOKENS</span>
-                <span className="m-val">{selectedAssistant.metadata?.output_tokens || 0}</span>
-              </div>
-            </div>
-
-            {/* Key Resolution Timeline */}
-            <div className="glass-card section-card">
-              <div className="section-header">
-                <span className="section-title">RESOLUTION TIMELINE</span>
-              </div>
-
-              {selectedAssistant.metadata?.timeline && selectedAssistant.metadata.timeline.length > 1 && (
-                <div className="timeline-multi-bar">
-                  {selectedAssistant.metadata.timeline.map((step, si) => (
-                    <div
-                      key={si}
-                      className={`timeline-segment ${step.status === 200 ? "seg-green" : "seg-amber"}`}
-                      style={{ flex: 1 }}
-                    />
-                  ))}
                 </div>
               )}
 
-              <div className="timeline-steps-list">
-                {selectedAssistant.metadata?.timeline?.map((step, sIdx) => (
-                  <div key={sIdx} className="timeline-step-row">
-                    <div className="step-left">
-                      <span className={`step-dot ${step.status === 200 ? "orb-green" : "orb-amber"}`} />
-                      <span className="step-key">{step.key_id}</span>
-                      <span className={`step-code ${step.status === 200 ? "code-200" : "code-fail"}`}>
-                        {step.status}
-                      </span>
-                    </div>
-                    <span className="step-ms">{step.latency_ms?.toLocaleString()} ms</span>
+              <div ref={bottomRef} />
+            </div>
+
+            {/* Bottom Input Area in Active Chat */}
+            <div className="copilot-bottom-input-deck">
+              {showSystemPrompt && (
+                <div className="center-system-prompt-drawer">
+                  <span className="sys-badge">System Prompt:</span>
+                  <input
+                    data-testid="system-prompt-input"
+                    type="text"
+                    className="center-sys-field"
+                    placeholder="e.g. You are a concise mathematical assistant."
+                    value={systemPrompt}
+                    onChange={(e) => setSystemPrompt(e.target.value)}
+                  />
+                  <button className="sys-clear-btn" onClick={() => { setSystemPrompt(""); setShowSystemPrompt(false); }}>✕</button>
+                </div>
+              )}
+
+              <div className="copilot-center-input-card compact">
+                <textarea
+                  data-testid="chat-input"
+                  rows={2}
+                  className="center-input-textarea"
+                  placeholder="Ask a follow-up question..."
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  maxLength={4000}
+                />
+
+                <div className="center-input-bottom-bar">
+                  <div className="model-selector-pill">
+                    <CopilotRibbon />
+                    <span className="model-name-text">{currentModel}</span>
                   </div>
-                ))}
-                {!selectedAssistant.metadata?.timeline && (
-                  <div className="timeline-step-row">
-                    <div className="step-left">
-                      <span className="step-dot orb-green" />
-                      <span className="step-key">{selectedAssistant.metadata?.key_id || "cache"}</span>
-                      <span className="step-code code-200">200 OK</span>
+
+                  <div className="center-actions-right">
+                    <button
+                      className={`tool-icon-btn ${showSystemPrompt ? "tool-active" : ""}`}
+                      onClick={() => setShowSystemPrompt((p) => !p)}
+                      title="System prompt"
+                    >
+                      +
+                    </button>
+
+                    <div className="failover-inline-pill" title="Failover test simulation hook">
+                      <span>🛡️</span>
+                      <input
+                        type="text"
+                        className="inline-sim-input"
+                        placeholder="key_1=429"
+                        value={simulateFailure}
+                        onChange={(e) => setSimulateFailure(e.target.value)}
+                      />
                     </div>
-                    <span className="step-ms">{selectedAssistant.metadata?.latency_ms} ms</span>
+
+                    <button
+                      data-testid="send-button"
+                      className="center-send-circle-btn"
+                      disabled={loading || !input.trim()}
+                      onClick={() => handleSend()}
+                    >
+                      ➔
+                    </button>
                   </div>
-                )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ================= RIGHT INSPECTOR SIDEBAR ================= */}
+        {showDetails && selectedAssistant && (
+          <aside className="copilot-details-drawer">
+            <div className="drawer-top-row">
+              <div>
+                <h3 className="drawer-title">Request Details</h3>
+                <span className="drawer-sub">Reply {currentAssistantIndex + 1} of {assistantReplies.length}</span>
+              </div>
+              <button className="copilot-action-icon" onClick={() => setShowDetails(false)}>✕</button>
+            </div>
+
+            {/* Resolution Card */}
+            <div className={`drawer-resolution-card ${selectedAssistant.metadata?.resolution_source === "LLM_CACHE" ? "res-cache" : "res-live"}`}>
+              <div className="res-icon">
+                {selectedAssistant.metadata?.resolution_source === "LLM_CACHE" ? "⚡" : "✓"}
+              </div>
+              <div>
+                <div className="res-title">
+                  {selectedAssistant.metadata?.resolution_source === "LLM_CACHE" ? "Deterministic LLM Cache" : "Live Model Inference"}
+                </div>
+                <div className="res-desc">
+                  {selectedAssistant.metadata?.resolution_source === "LLM_CACHE"
+                    ? "Exact match found in SQLite local cache. 0 token cost incurred."
+                    : selectedAssistant.metadata?.fallback_attempts > 0
+                    ? `Answered by ${selectedAssistant.metadata?.key_id} after ${selectedAssistant.metadata?.fallback_attempts} fallback(s).`
+                    : `Answered directly by ${selectedAssistant.metadata?.key_id}.`}
+                </div>
               </div>
             </div>
 
-            {/* Model & Infrastructure Info */}
-            <div className="glass-card section-card">
-              <div className="section-header">
-                <span className="section-title">ENGINE & PROTOCOL</span>
+            {/* 2x2 Metric Grid */}
+            <div className="drawer-metrics-grid">
+              <div className="drawer-metric-tile">
+                <span className="dm-label">LATENCY</span>
+                <span className="dm-val">{selectedAssistant.metadata?.latency_ms?.toLocaleString()} <span className="dm-unit">ms</span></span>
               </div>
-              <div className="engine-info-rows">
-                <div className="engine-row">
-                  <span className="e-label">Model</span>
-                  <span className="e-val-mono">{selectedAssistant.metadata?.model || currentModel}</span>
+              <div className="drawer-metric-tile">
+                <span className="dm-label">FALLBACKS</span>
+                <span className={`dm-val ${(selectedAssistant.metadata?.fallback_attempts || 0) > 0 ? "dm-warn" : ""}`}>
+                  {selectedAssistant.metadata?.fallback_attempts || 0}
+                </span>
+              </div>
+              <div className="drawer-metric-tile">
+                <span className="dm-label">INPUT TOKENS</span>
+                <span className="dm-val">{selectedAssistant.metadata?.input_tokens || 0}</span>
+              </div>
+              <div className="drawer-metric-tile">
+                <span className="dm-label">OUTPUT TOKENS</span>
+                <span className="dm-val">{selectedAssistant.metadata?.output_tokens || 0}</span>
+              </div>
+            </div>
+
+            {/* Timeline */}
+            <div className="drawer-section">
+              <span className="drawer-section-title">RESOLUTION TIMELINE</span>
+              <div className="drawer-timeline-list">
+                {selectedAssistant.metadata?.timeline?.map((step, sIdx) => (
+                  <div key={sIdx} className="timeline-item-row">
+                    <div className="t-left">
+                      <span className={`t-orb ${step.status === 200 ? "orb-green" : "orb-amber"}`} />
+                      <span className="t-key">{step.key_id}</span>
+                      <span className={`t-code ${step.status === 200 ? "code-200" : "code-fail"}`}>{step.status}</span>
+                    </div>
+                    <span className="t-ms">{step.latency_ms?.toLocaleString()} ms</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Engine Specs */}
+            <div className="drawer-section">
+              <span className="drawer-section-title">ENGINE SPECIFICATIONS</span>
+              <div className="spec-table">
+                <div className="spec-row">
+                  <span className="spec-key">Model</span>
+                  <span className="spec-val-mono">{selectedAssistant.metadata?.model || currentModel}</span>
                 </div>
-                <div className="engine-row">
-                  <span className="e-label">Provider</span>
-                  <span className="e-val">Google Gemini / LiteLLM</span>
+                <div className="spec-row">
+                  <span className="spec-key">Provider</span>
+                  <span className="spec-val">LiteLLM Key Pool</span>
                 </div>
-                <div className="engine-row">
-                  <span className="e-label">Storage</span>
-                  <span className="e-val">SQLite (Persistent)</span>
+                <div className="spec-row">
+                  <span className="spec-key">Persistence</span>
+                  <span className="spec-val">SQLite (Session History)</span>
                 </div>
               </div>
             </div>
           </aside>
         )}
       </div>
+
+      {/* Footer Disclaimer */}
+      <footer className="copilot-footer-bar">
+        KeyFlow AI may make mistakes. Powered by LiteLLM key failover & deterministic response cache.
+      </footer>
     </div>
   );
 }
